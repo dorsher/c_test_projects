@@ -1,28 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#define MAX 10
 
-/*
-
-break into small tasks:
-    - assume no macros and input is valid
-    - read lines
-    NO NEED - cpu - struct with 8 + 2 (psw + pc) structs of cell. maybe use array
-    - psw - another register. special one, if use case, return, if 0 then jump etc
-    - pc - program counter - ram address from which cpu reads
-    - struct - node - one short with bit fields - cell  (all zeroes)
-    - ram - array of 256 structs (cell)
-    - RAM and CPU
-
-    build main:
-    // no need - build struct of CPU
-    // no need - build struct of RAM
-    - read line by line, and parse the args into a do_functions. output will be cells - check the paper for which ones to start
-    - go simple (in register. check if there's one r and then 0 to 8) inc r2 for instance\\
-    - output to a big array or somehting like this
-    twos complement שיטת המשלים ל2
-*/
 
 /* the cell struct contains the value var with 10 bits
 to represent the "word" of the machine code instructions.
