@@ -41,13 +41,13 @@ cell do_rts();
 int do_not(cell *array, char *operand);
 int validate_register_operand(char *operand);
 int validate_two_words_in_cmd(char *split, char *first_operand);
-int print_elements_in_cell(cell *cell_array, int num_of_elements);
+void print_elements_in_cell(cell *cell_array, int num_of_elements);
 
 /* decalre bitwise operator functions */
 
-int set_opcode(cell *cell_array, int opcode, int element);
-int set_src_type(cell *cell_array, int src, int element);
-int set_dst_type(cell *cell_array, int dst, int element);
+void set_opcode(cell *cell_array, int opcode, int element);
+void set_src_type(cell *cell_array, int src, int element);
+void set_dst_type(cell *cell_array, int dst, int element);
 /*
  set_opcode
  set_src_type
@@ -58,7 +58,7 @@ int main()
 {
 
     /* temp solution - process the instruction */
-    char inst[] = "not r3";
+    char inst[] = "not r7";
     char res_buff[100] = {0};
     
     /* the first operand splitted by " " */
@@ -156,6 +156,7 @@ int do_not(cell *cell_array, char *operand)
 {
     int register_num = operand[1] - '0';
     int src, dst, element;
+    cell c_not_first_word = {0};
     /* first cell is based on the instructions
         opcode - src - dst - ARE
         0100   -  00 -  11   - 00
@@ -168,15 +169,10 @@ int do_not(cell *cell_array, char *operand)
     set_dst_type(cell_array, dst, element);
     /* second cell is the register
         opcode - src - dst - ARE
-        0000   - 00 -  register_num - 00
-
-    */
-    src = 0;
-    dst = 3;
-    element = 0;
-    set_opcode(cell_array, not, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
+        0000   - 00 -  register_num - 00 */
+    element = 1;
+    c_not_first_word.value = register_num << LEFT_SHIFT_DST_TYPE_COUNT;
+    cell_array[element] = c_not_first_word;
     return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
 }
 
@@ -255,7 +251,7 @@ int validate_two_words_in_cmd(char *split, char *first_operand)
     return 0;
 }
 
-int print_elements_in_cell(cell *cell_array, int num_of_elements)
+void print_elements_in_cell(cell *cell_array, int num_of_elements)
 {
     int i;
     char res_buff[100] = {0};
@@ -264,30 +260,25 @@ int print_elements_in_cell(cell *cell_array, int num_of_elements)
     {
         printf("Element #%d bits: %s.\n", i, itoa(cell_array[i].value, res_buff, 2));
     }
-    return 0;
 }
 
 /* bitwise operator functions */
 
-int set_src_type(cell *cell_array, int src, int element)
+void set_src_type(cell *cell_array, int src, int element)
 {
     int mask;
     mask = src << LEFT_SHIFT_SRC_TYPE_COUNT;
-    cell_array[element].value = src | mask;
-    return 0;
+    cell_array[element].value |= mask;
 }
 
-int set_dst_type(cell *cell_array, int dst, int element)
+void set_dst_type(cell *cell_array, int dst, int element)
 {
     int mask;
     mask = dst << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element].value = dst | mask;
-    return 0;
+    cell_array[element].value |= mask;
 }
 
-int set_opcode(cell *cell_array, int opcode, int element)
+void set_opcode(cell *cell_array, int opcode, int element)
 {
-    cell c_not_first_word = {0};
-    c_not_first_word.value = opcode << LEFT_SHIFT_OPCODE_COUNT;
-    cell_array[element] = c_not_first_word;
+    cell_array[element].value = opcode << LEFT_SHIFT_OPCODE_COUNT;
 }
