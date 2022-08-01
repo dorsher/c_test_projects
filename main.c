@@ -1,11 +1,26 @@
-/* shift + alt + F to indent your code */
+/* shift + alt + F to indent your code
+should have an array of structs (each object has the opcode, src, dst etc) later on you run in a loop... talk with the legend
+
+first pass
+validate like immediate 
+
+*/
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
+#include <math.h>
+
 #define NUMBER_OF_ITEMS_FOR_ONE_OPERAND 2
 #define LEFT_SHIFT_SRC_TYPE_COUNT 4
 #define LEFT_SHIFT_DST_TYPE_COUNT 2
 #define LEFT_SHIFT_OPCODE_COUNT 6
+#define LEFT_SHIFT_SRC_TYPE_COUNT_BY_DIRECT_REGISTER 2
+#define LEFT_SHIFT_DST_TYPE_COUNT_BY_DIRECT_REGISTER 6
+#define LEFT_SHIFT_BY_TWO 2
+#define LEFT_SHIFT_BY_SIX 6
+#define NUM_BITS_IN_CELL_WITHOUT_ARE 8
+
 /* the cell struct contains the value var with 10 bits
 to represent the "word" of the machine code instructions.
 */
@@ -30,6 +45,16 @@ typedef enum
     hlt = 15
 } opcodes;
 
+typedef enum
+{
+    immediate_operand = 0,
+    direct_operand = 1,
+    struct_operand = 2,
+    register_operand = 3,
+    invalid_operand = 666
+
+} operand_type;
+
 typedef struct cell
 {
     unsigned short value : 10;
@@ -37,48 +62,158 @@ typedef struct cell
 
 /* decalre function prototypes*/
 
-/* zero operand function prototypes*/
-cell do_hlt();
-cell do_rts();
-
-/* one operand function prototypes*/
-int do_not(cell *array, char *operand);
-int do_clr(cell *array, char *operand);
-int do_inc(cell *array, char *operand);
-int do_dec(cell *array, char *operand);
-int do_get(cell *array, char *operand);
-int do_prn(cell *array, char *operand);
-
 /* two operand function prototypes*/
-int do_mov(cell *array, char *operand);
-// int do_cmp(cell *array, char *operand);
-// int do_add(cell *array, char *operand);
-// int do_sub(cell *array, char *operand);
-// int do_lea(cell *array, char *operand);
+int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *operand_dest);
 
 /* oprand validator function prototypes*/
 
-int validate_register_operand(char *operand);
+int validate_register_operand(const char *operand);
+int validate_immediate_operand(const char *operand);
 int validate_two_words_in_cmd(char *split, char *first_operand);
 int validate_three_words_in_cmd(char *split, char *first_operand, char *second_operand);
 void print_elements_in_cell(cell *cell_array, int num_of_elements);
 
 /* decalre bitwise operator functions */
 
-void set_opcode(cell *cell_array, int opcode, int element);
-void set_src_type(cell *cell_array, int src, int element);
-void set_dst_type(cell *cell_array, int dst, int element);
+void set_opcode(cell *cell_array, int opcode, int element, int shift);
+void set_field_type(cell *cell_array, int src, int element, int shift);
+void set_dst_type(cell *cell_array, int dst, int element, int shift);
 /*
  set_opcode
  set_src_type
  set_dst_type
 */
 
+operand_type get_operand_type(const char *operand)
+{
+    operand_type type = invalid_operand;
+    int rc;
+    rc = validate_register_operand(operand);
+    if (rc == 0)
+    {
+        type = register_operand;
+    }
+    else
+    {
+        rc = validate_immediate_operand(operand);
+        if (rc == 0)
+        {
+            type = immediate_operand;
+        }
+        else
+        {
+            // printf("Operand '%s' is not valid.\n", mov_operation);
+            return 1;
+        }
+    }
+
+    return type;
+}
+
+int handle_operand_addressing_method(operand_type type, const char *operand, int *method, int *value)
+{
+    switch (type)
+    {
+    case immediate_operand:
+        *method = 0;
+        *value = atoi(&operand[1]);
+        break;
+    case register_operand:
+        *method = 3;
+        *value = operand[1] - '0';
+        break;
+    default:
+        return -1;
+    }
+    return 0;
+}
+
+int handle_operand_words(operand_type type, cell *cell_array, unsigned int index_element, int value, int shift_only_for_register)
+{
+    cell c_operand_word = {0};
+    switch (type)
+    {
+    case immediate_operand:
+        c_operand_word.value = value << LEFT_SHIFT_BY_TWO;
+        cell_array[index_element] = c_operand_word;
+        return 1;
+    case direct_operand:
+        break;
+    case struct_operand:
+        break;
+    case register_operand:
+        set_field_type(cell_array, value, index_element, shift_only_for_register);
+        return 1;
+    case invalid_operand:
+        return -1;
+    }
+}
+
+typedef struct
+{
+    const char *name;
+    opcodes opcode;
+    /* operand_num - how many operands the command should handle*/
+    int operand_num;
+    /* TODO (TBD) - add operand_options (!@!!!!!!)*/
+} operation_info;
+
+operation_info operations[] = {
+    {.name = "mov",
+     .opcode = mov,
+     .operand_num = 2},
+    {.name = "cmp",
+     .opcode = cmp,
+     .operand_num = 2},
+    {.name = "add",
+     .opcode = add,
+     .operand_num = 2},
+    {.name = "sub",
+     .opcode = sub,
+     .operand_num = 2},
+    {.name = "not",
+     .opcode = not,
+     .operand_num = 1},
+    {.name = "clr",
+     .opcode = clr,
+     .operand_num = 1},
+    {.name = "lea",
+     .opcode = lea,
+     .operand_num = 2},
+    {.name = "inc",
+     .opcode = inc,
+     .operand_num = 1},
+    {.name = "dec",
+     .opcode = dec,
+     .operand_num = 1},
+    {.name = "jmp",
+     .opcode = jmp,
+     .operand_num = 1},
+    {.name = "bne",
+     .opcode = bne,
+     .operand_num = 1},
+    {.name = "get",
+     .opcode = get,
+     .operand_num = 1},
+    {.name = "prn",
+     .opcode = prn,
+     .operand_num = 1},
+    {.name = "jsr",
+     .opcode = jsr,
+     .operand_num = 1},
+    {.name = "rts",
+     .opcode = rts,
+     .operand_num = 0},
+    {.name = "hlt",
+     .opcode = hlt,
+     .operand_num = 0},
+};
+
 int main()
 {
-
+    int i;
     /* temp solution - process the instruction */
-    char inst[] = "mov r7 r3";
+    char inst[] = "hlt";
     char res_buff[100] = {0};
 
     /* the first operand splitted by " " */
@@ -112,232 +247,55 @@ int main()
 
     /* temp solution - global vars to handle register operands */
     int num_of_elements;
-    char first_operand[2];
-    char second_operand[2];
-    cell cell_array[5];
+    char first_operand[16];
+    char second_operand[16];
+    cell cell_array[5] = {0};
+    int rc;
+    int is_found = 0;
 
-    /* operations with zero operands */
-
-    /* rts operation */
-    if ((strcmp(rts_operation, split)) == 0)
+    for (i = 0; i < sizeof(operations) / sizeof(operations[0]); i++)
     {
-        printf("operator %s is valid\n", rts_operation);
-        res_cell = do_rts();
-        /* itoa - integer to ascii */
-        printf("%s bits: %s", rts_operation, itoa(res_cell.value, res_buff, 2));
-    }
-
-    /* hlt operation */
-    else if ((strcmp(hlt_operation, split)) == 0)
-    {
-
-        printf("operator %s is valid\n", hlt_operation);
-        res_cell = do_hlt();
-        /* itoa - integer to ascii */
-        printf("%s bits: %s", hlt_operation, itoa(res_cell.value, res_buff, 2));
-    }
-
-    /* operations with one operands */
-
-    /* not operation */
-    else if ((strcmp(not_operation, split)) == 0)
-    {
-
-        int rc;
-        int i;
-        /* verify there are two words in command */
-        rc = validate_two_words_in_cmd(split, first_operand);
-        if (rc != 0)
+        if (strcmp(split, operations[i].name) == 0)
         {
-            printf("- operator %s is not valid.\n", not_operation);
-        }
-        /* verify register is valid and then print the words (bits) */
-        else
-        {
-            rc = validate_register_operand(first_operand);
-            if (rc != 0)
+            is_found = 1;
+            printf("operator %s is valid\n", split);
+            switch (operations[i].operand_num)
             {
-                printf("Operand '%s' is not legal. Register is not valid.\n", not_operation);
-            }
-            else
-            {
-                num_of_elements = do_not(cell_array, first_operand);
-                print_elements_in_cell(cell_array, num_of_elements);
+            case 0:
+                num_of_elements = do_operation(operations[i].opcode, cell_array, NULL, NULL);
+                break;
+            case 1:
+                /* verify there are two words in command */
+                rc = validate_two_words_in_cmd(split, first_operand);
+                if (rc != 0)
+                {
+                    printf("- operator %s is not valid.\n", operations[i].name);
+                    return -1;
+                }
+
+                num_of_elements = do_operation(operations[i].opcode, cell_array, first_operand, NULL);
+                break;
+            case 2:
+                rc = validate_three_words_in_cmd(split, first_operand, second_operand);
+                if (rc != 0)
+                {
+                    printf("- operator %s is not valid.\n", mov_operation);
+                    return 1;
+                }
+                num_of_elements = do_operation(operations[i].opcode, cell_array, first_operand, second_operand);
+                break;
+            default:
+                printf("Invalid operand num %d", operations[i].operand_num);
+                return -1;
             }
         }
     }
 
-    /* clr operation */
-    else if ((strcmp(clr_operation, split)) == 0)
-    {
-        int rc;
-        int i;
-        /* verify there are two words in command */
-        rc = validate_two_words_in_cmd(split, first_operand);
-        if (rc != 0)
-        {
-            printf("- operator %s is not valid.\n", clr_operation);
-        }
-        /* verify register is valid and then print the words (bits) */
-        else
-        {
-            rc = validate_register_operand(first_operand);
-            if (rc != 0)
-            {
-                printf("Operand '%s' is not legal. Register is not valid.\n", clr_operation);
-            }
-            else
-            {
-                num_of_elements = do_clr(cell_array, first_operand);
-                print_elements_in_cell(cell_array, num_of_elements);
-            }
-        }
-    }
+    print_elements_in_cell(cell_array, num_of_elements);
 
-    /* inc operation */
-    else if ((strcmp(inc_operation, split)) == 0)
-    {
-        int rc;
-        int i;
-        /* verify there are two words in command */
-        rc = validate_two_words_in_cmd(split, first_operand);
-        if (rc != 0)
-        {
-            printf("- operator %s is not valid.\n", inc_operation);
-        }
-        /* verify register is valid and then print the words (bits) */
-        else
-        {
-            rc = validate_register_operand(first_operand);
-            if (rc != 0)
-            {
-                printf("Operand '%s' is not legal. Register is not valid.\n", inc_operation);
-            }
-            else
-            {
-                num_of_elements = do_inc(cell_array, first_operand);
-                print_elements_in_cell(cell_array, num_of_elements);
-            }
-        }
-    }
-
-    /* dec operation */
-    else if ((strcmp(dec_operation, split)) == 0)
-    {
-        int rc;
-        int i;
-        /* verify there are two words in command */
-        rc = validate_two_words_in_cmd(split, first_operand);
-        if (rc != 0)
-        {
-            printf("- operator %s is not valid.\n", dec_operation);
-        }
-        /* verify register is valid and then print the words (bits) */
-        else
-        {
-            rc = validate_register_operand(first_operand);
-            if (rc != 0)
-            {
-                printf("Operand '%s' is not legal. Register is not valid.\n", dec_operation);
-            }
-            else
-            {
-                num_of_elements = do_dec(cell_array, first_operand);
-                print_elements_in_cell(cell_array, num_of_elements);
-            }
-        }
-    }
-
-    /* get operation */
-    else if ((strcmp(get_operation, split)) == 0)
-    {
-        int rc;
-        int i;
-        /* verify there are two words in command */
-        rc = validate_two_words_in_cmd(split, first_operand);
-        if (rc != 0)
-        {
-            printf("- operator %s is not valid.\n", get_operation);
-        }
-        /* verify register is valid and then print the words (bits) */
-        else
-        {
-            rc = validate_register_operand(first_operand);
-            if (rc != 0)
-            {
-                printf("Operand '%s' is not legal. Register is not valid.\n", get_operation);
-            }
-            else
-            {
-                num_of_elements = do_get(cell_array, first_operand);
-                print_elements_in_cell(cell_array, num_of_elements);
-            }
-        }
-    }
-
-    /* prn operation */
-    else if ((strcmp(prn_operation, split)) == 0)
-    {
-        int rc;
-        int i;
-        /* verify there are two words in command */
-        rc = validate_two_words_in_cmd(split, first_operand);
-        if (rc != 0)
-        {
-            printf("- operator %s is not valid.\n", prn_operation);
-        }
-        /* verify register is valid and then print the words (bits) */
-        else
-        {
-            rc = validate_register_operand(first_operand);
-            if (rc != 0)
-            {
-                printf("Operand '%s' is not legal. Register is not valid.\n", prn_operation);
-            }
-            else
-            {
-                num_of_elements = do_prn(cell_array, first_operand);
-                print_elements_in_cell(cell_array, num_of_elements);
-            }
-        }
-    }
-
-    /* operations with two operands */
-
-    /* mov operation */
-    else if ((strcmp(mov_operation, split)) == 0)
-    {
-        int rc;
-        int rc_first_operand;
-        int rc_second_operand;
-        int i;
-        /* verify there are three words in command */
-        rc = validate_three_words_in_cmd(split, first_operand, second_operand);
-        if (rc != 0)
-        {
-            printf("- operator %s is not valid.\n", mov_operation);
-        }
-        /* verify register is valid and then print the words (bits) */
-        else
-        {
-            printf("first operand: %s\n", first_operand);
-            printf("second operand: %s\n", second_operand);
-            rc_first_operand = validate_register_operand(first_operand);
-            rc_second_operand = validate_register_operand(second_operand);
-            if ((rc_first_operand != 0) || (rc_second_operand != 0))
-            {
-                printf("Operand '%s' is not legal. Register is not valid.\n", mov_operation);
-            }
-            else
-            {
-                num_of_elements = do_mov(cell_array, first_operand);
-                print_elements_in_cell(cell_array, num_of_elements);
-            }
-        }
-    }
-
+    /* operations with ze
     /* operations that are not listed in the opcodes table - fail with error */
-    else
+    if (!is_found)
     {
         printf("operator %s is not recognized wrong - ERROR!!!\n", inst);
     }
@@ -345,200 +303,141 @@ int main()
 }
 
 /* operations to call */
-
-/* operations with zero operand */
-
-cell do_hlt()
+/* type_source and type_operation are set to invalid_operand if there is no soure/dest operand (e.g. rts, hlt) */
+int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *operand_dest)
 {
-    cell c_hlt;
-    c_hlt.value = 15 << 6;
-    return c_hlt;
-}
+    operand_type type_source = invalid_operand, type_dest = invalid_operand;
+    int value_num_source;
+    int value_num_dest;
+    int src = 0, dst = 0, element;
+    int rc;
+    int num_words;
 
-cell do_rts()
-{
-    cell c_rts;
-    c_rts.value = 14 << 6;
-    return c_rts;
-}
+    cell c_source_word = {0};
+    cell c_dest_word = {0};
 
-/* operations with one operand */
+    /* handle src operand */
+    if (operand_source != NULL)
+    {
+        type_source = get_operand_type(operand_source);
+        if (type_source == invalid_operand)
+        {
+            printf("Failed handling the source type\n");
+            return -1;
+        }
 
-int do_not(cell *cell_array, char *operand)
-{
-    int register_num = operand[1] - '0';
-    int src, dst, element;
-    cell c_not_first_word = {0};
-    /* first cell is based on the instructions
-        opcode - src - dst - ARE
-        0100   -  00 -  11   - 00
-    the 'not' value is taken from the opecodes enum */
-    src = 0;
-    dst = 3;
+        rc = handle_operand_addressing_method(type_source, operand_source, &src, &value_num_source);
+        if (rc != 0)
+        {
+            printf("Failed handling the source addressing method\n");
+            return -1;
+        }
+    }
+
+    /* handle dest operand */
+    if (operand_dest != NULL)
+    {
+        type_dest = get_operand_type(operand_dest);
+        if (type_dest == invalid_operand)
+        {
+            printf("Failed handling the source type\n");
+            return -1;
+        }
+
+        rc = handle_operand_addressing_method(type_dest, operand_dest, &dst, &value_num_dest);
+        if (rc != 0)
+        {
+            printf("Failed handling the dest addressing method\n");
+            return -1;
+        }
+    }
+
+    /* zero cell is based on the instructions */
     element = 0;
-    set_opcode(cell_array, not, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
-    /* second cell is the register
-        opcode - src - dst - ARE
-        0000   - 00 -  register_num - 00 */
+    set_opcode(cell_array, opcode, element, LEFT_SHIFT_OPCODE_COUNT);
+    set_field_type(cell_array, src, element, LEFT_SHIFT_SRC_TYPE_COUNT);
+    set_dst_type(cell_array, dst, element, LEFT_SHIFT_DST_TYPE_COUNT);
+    /* increment element by 1 since the instruciton's word was written  */
     element = 1;
-    c_not_first_word.value = register_num << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element] = c_not_first_word;
-    return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
-}
 
-int do_clr(cell *cell_array, char *operand)
-{
-    int register_num = operand[1] - '0';
-    int src, dst, element;
-    cell c_clr_first_word = {0};
-    /* first cell is based on the instructions
-        opcode - src - dst - ARE
-        0110   -  00 -  11   - 00
-    the 'clr' value is taken from the opecodes enum */
-    src = 0;
-    dst = 3;
-    element = 0;
-    set_opcode(cell_array, clr, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
-    /* second cell is the register
-        opcode - src - dst - ARE
-        0000   - 00 -  register_num - 00 */
-    element = 1;
-    c_clr_first_word.value = register_num << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element] = c_clr_first_word;
-    return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
-}
+    /* handle special cases  */
 
-int do_inc(cell *cell_array, char *operand)
-{
-    int register_num = operand[1] - '0';
-    int src, dst, element;
-    cell c_inc_first_word = {0};
-    /* first cell is based on the instructions
-        opcode - src - dst - ARE
-        0111   -  00 -  11   - 00
-    the 'inc' value is taken from the opecodes enum */
-    src = 0;
-    dst = 3;
-    element = 0;
-    set_opcode(cell_array, inc, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
-    /* second cell is the register
-        opcode - src - dst - ARE
-        0000   - 00 -  register_num - 00 */
-    element = 1;
-    c_inc_first_word.value = register_num << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element] = c_inc_first_word;
-    return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
-}
+    /* handle regsiter and register operands */
+    if ((type_source == register_operand) && (type_dest == register_operand))
+    {
+        set_field_type(cell_array, value_num_source, element, LEFT_SHIFT_BY_SIX);
+        set_dst_type(cell_array, value_num_dest, element, LEFT_SHIFT_BY_TWO);
+        return 2;
+    }
 
-int do_dec(cell *cell_array, char *operand)
-{
-    int register_num = operand[1] - '0';
-    int src, dst, element;
-    cell c_dec_first_word = {0};
-    /* first cell is based on the instructions
-        opcode - src - dst - ARE
-        1000   -  00 -  11   - 00
-    the 'dec' value is taken from the opecodes enum */
-    src = 0;
-    dst = 3;
-    element = 0;
-    set_opcode(cell_array, dec, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
-    /* second cell is the register
-        opcode - src - dst - ARE
-        0000   - 00 -  register_num - 00 */
-    element = 1;
-    c_dec_first_word.value = register_num << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element] = c_dec_first_word;
-    return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
-}
+    if (operand_source != NULL)
+    { /* handle source operand - the handle_operand_words funciton contains another switch case per each case*/
+        num_words = handle_operand_words(type_source, cell_array, element, value_num_source, LEFT_SHIFT_BY_SIX);
 
-int do_get(cell *cell_array, char *operand)
-{
-    int register_num = operand[1] - '0';
-    int src, dst, element;
-    cell c_get_first_word = {0};
-    /* first cell is based on the instructions
-        opcode - src - dst - ARE
-        1011   -  00 -  11   - 00
-    the 'get' value is taken from the opecodes enum */
-    src = 0;
-    dst = 3;
-    element = 0;
-    set_opcode(cell_array, get, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
-    /* second cell is the register
-        opcode - src - dst - ARE
-        0000   - 00 -  register_num - 00 */
-    element = 1;
-    c_get_first_word.value = register_num << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element] = c_get_first_word;
-    return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
-}
+        if (num_words == -1)
+        {
+            printf("Failed getting source operand words.\n");
+            return -1;
+        }
 
-int do_prn(cell *cell_array, char *operand)
-{
-    int register_num = operand[1] - '0';
-    int src, dst, element;
-    cell c_prn_first_word = {0};
-    /* first cell is based on the instructions
-        opcode - src - dst - ARE
-        1100   -  00 -  11   - 00
-    the 'prn' value is taken from the opecodes enum */
-    src = 0;
-    dst = 3;
-    element = 0;
-    set_opcode(cell_array, prn, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
-    /* second cell is the register
-        opcode - src - dst - ARE
-        0000   - 00 -  register_num - 00 */
-    element = 1;
-    c_prn_first_word.value = register_num << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element] = c_prn_first_word;
-    return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
-}
+        element += num_words;
+    }
 
-/* operations with two operands */
+    /* handle dest operand  */
+    if (operand_dest != NULL)
+    {
+        num_words = handle_operand_words(type_dest, cell_array, element, value_num_dest, LEFT_SHIFT_BY_TWO);
 
-int do_mov(cell *cell_array, char *operand)
-{
-    int register_num_src_01 = operand[1] - '0';
-    int register_num_dst_02 = operand[2] - '0';
-    int src, dst, element;
-    cell c_mov_first_word = {0};
-    /* first cell is based on the instructions
-        opcode - src - dst - ARE
-        0000   -  00 -  11   - 00
-    the 'mov' value is taken from the opecodes enum */
-    src = 3;
-    dst = 3;
-    element = 0;
-    set_opcode(cell_array, mov, element);
-    set_src_type(cell_array, src, element);
-    set_dst_type(cell_array, dst, element);
-    /* second cell is the register
-        opcode          src                     dst          ARE
-        0000    register_num_src_01    register_num_dst_02    00 */
-    element = 1;
-    c_mov_first_word.value = register_num_src_01 << LEFT_SHIFT_SRC_TYPE_COUNT;
-    c_mov_first_word.value = register_num_dst_02 << LEFT_SHIFT_DST_TYPE_COUNT;
-    cell_array[element] = c_mov_first_word;
-    return NUMBER_OF_ITEMS_FOR_ONE_OPERAND;
+        if (num_words == -1)
+        {
+            printf("Failed getting dest operand words.\n");
+            return -1;
+        }
+
+        element += num_words;
+    }
+
+    /* return total number of words in cell array*/
+    return element;
 }
 
 /* validate functions */
+int is_string_numeric(const char *str)
+{
+    /* check whether string is not empty */
+    if (str[0] == '\0')
+    {
+        return 1;
+    }
+    for (int i = 0; str[i] != '\0'; i++)
+    {
+        /* rc = 0 of isdigit func means the digit is not a number */
+        if ((isdigit(str[i])) == 0)
+            return 2;
+    }
+    return 0;
+}
 
-int validate_register_operand(char *operand)
+int validate_immediate_operand(const char *operand)
+{
+    int rc;
+    printf("validate_immediate_operand: first_char is %c\n", operand[0]);
+    /* get the first char of operand and verify it's '#' as required */
+    if (operand[0] != '#')
+    {
+        printf("operand does not start with '#' as required: '%c'\n", operand[0]);
+        return 1;
+    }
+    rc = is_string_numeric(&operand[1]);
+    if (rc != 0)
+    {
+        printf("operand does not contain a numeric number following the '#' char: '%p'\n", &operand[1]);
+        return 2;
+    }
+    return 0;
+}
+
+int validate_register_operand(const char *operand)
 {
     int register_num = operand[1] - '0';
     printf("register operand is %s\n", operand);
@@ -547,14 +446,20 @@ int validate_register_operand(char *operand)
     int is_valid = 1;
     int num_of_elements_in_array;
     /* get the regiser operand and verify it's correct */
-    if (operand[0] != 'r')
+    if (strlen(operand) != 2)
+    {
+        /* return 1 if the first operand contains more than 2 chars */
+        printf("Error parsing operand: %s - a register with 1 numeric identifer (i.e. 'r1') between 0 to 7 is required\n", operand);
+        is_valid = 0;
+    }
+    else if (operand[0] != 'r')
     {
         printf("register symbol does not exist: %c\n", operand[0]);
         is_valid = 0;
     }
-    if ((register_num > 7) || (register_num < 0))
+    else if ((register_num > 7) || (register_num < 0))
     {
-        printf("register number is not valid: %c", operand[1]);
+        printf("register number is not valid: %c\n", operand[1]);
         is_valid = 0;
     }
     if (is_valid == 0)
@@ -576,17 +481,7 @@ int validate_two_words_in_cmd(char *split, char *first_operand)
         split = strtok(NULL, " ");
         if (counter_splitted_words == 1)
         {
-            if (strlen(split) > 2)
-            {
-                /* return 1 if the first operand contains more than 2 chars */
-                printf("A register with 1 numeric identifer (i.e. 'r1') is required ");
-                return 1;
-            }
-            else
-            {
-                /* copy 2 chars + 1 ('\0' - end of string) */
-                strncpy(first_operand, split, 3);
-            }
+            strcpy(first_operand, split);
         }
     }
 
@@ -606,52 +501,43 @@ int validate_three_words_in_cmd(char *split, char *first_operand, char *second_o
     printf("read operator: '%s'\n", split);
     while (split != NULL)
     {
+        split = strtok(NULL, ",");
         counter_splitted_words += 1;
-        split = strtok(NULL, " ");
-        printf("first_operand is: '%s', counter = %d\n", first_operand, counter_splitted_words);
-        printf("second_operand is: '%s', counter = %d\n", second_operand, counter_splitted_words);
-        if (counter_splitted_words == 1)
+        /* verify the first and second word (cmd + operand) exist as split should not be null */
+        if ((split == NULL) && (counter_splitted_words < 3))
         {
-            if (strlen(split) > 3)
+            /* no operand was provided */
+            if (counter_splitted_words == 1)
             {
-                /* return 1 if the first operand contains more than 2 chars */
-                printf("A register with 1 numeric identifer (i.e. 'r1') is required ");
-                return 1;
+                printf("Command requires operands, where none was provided ");
             }
+            /* only one was provided */
             else
             {
-                /* copy 2 chars + 1 ('\0' - end of string) */
-                strncpy(first_operand, split, 3);
-                printf("first_operand copied: '%s'\n", first_operand);
+                printf("Command requires two operands ");
             }
+            return 1;
         }
-        if (counter_splitted_words == 2)
+        else if (counter_splitted_words == 1)
         {
-            if (strlen(split) > 3)
-            {
-                /* return 1 if the first operand contains more than 2 chars */
-                printf("A register with 1 numeric identifer (i.e. 'r1') is required ");
-                return 1;
-            }
-            else
-            {
-                /* copy 2 chars + 1 ('\0' - end of string) */
-                strncpy(second_operand, split, 3);
-                printf("second_operand copied: '%s'\n", second_operand);
-            }
+
+            /* copy 2 chars + 1 ('\0' - end of string) */
+            strcpy(first_operand, split);
         }
-    }
-    printf("outside the while loop, first_operand is: '%s'\n", first_operand);
-    printf("outside the while loop, second_operand is: '%s'\n", second_operand);
-    if (counter_splitted_words > 3)
-    {
-        /* return 3 if more than 3 words were provided */
-        printf("Too many operands were provided ");
-        return 3;
+        else if (counter_splitted_words == 2)
+        {
+            /* copy 2 chars + 1 ('\0' - end of string) */
+            strcpy(second_operand, split);
+        }
+        else if (counter_splitted_words > 3)
+        {
+            /* return 4 if more than 3 words were provided */
+            printf("Too many operands were provided ");
+            return 4;
+        }
     }
     return 0;
 }
-
 
 void print_elements_in_cell(cell *cell_array, int num_of_elements)
 {
@@ -666,21 +552,21 @@ void print_elements_in_cell(cell *cell_array, int num_of_elements)
 
 /* bitwise operator functions */
 
-void set_src_type(cell *cell_array, int src, int element)
+void set_field_type(cell *cell_array, int src, int element, int shift)
 {
     int mask;
-    mask = src << LEFT_SHIFT_SRC_TYPE_COUNT;
+    mask = src << shift;
     cell_array[element].value |= mask;
 }
 
-void set_dst_type(cell *cell_array, int dst, int element)
+void set_dst_type(cell *cell_array, int dst, int element, int shift)
 {
     int mask;
-    mask = dst << LEFT_SHIFT_DST_TYPE_COUNT;
+    mask = dst << shift;
     cell_array[element].value |= mask;
 }
 
-void set_opcode(cell *cell_array, int opcode, int element)
+void set_opcode(cell *cell_array, int opcode, int element, int shift)
 {
-    cell_array[element].value = opcode << LEFT_SHIFT_OPCODE_COUNT;
+    cell_array[element].value = opcode << shift;
 }
