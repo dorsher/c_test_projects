@@ -23,11 +23,12 @@ validate like immediate
 #define MAX_ELEMENTS 100
 #define MAX_ELEMENTS_FOR_MACRO 100
 #define OPERAND_SIZE 16
+#define MAX_ELEMENTS_IN_CELL 16
 
 /* struct node to hold char of arrays to get from input file */
 typedef struct Node
 {
-    int line_number;
+    int address;
     char tag[MAX_ELEMENTS];
     struct Node *next;
 } Node;
@@ -87,6 +88,197 @@ typedef enum
 
 } operand_type;
 
+typedef enum
+{
+    entry_guide = 0,
+    extern_guide = 1,
+    string_guide = 2,
+    data_guide = 3,
+    struct_guide = 4,
+    invalid_guide = 666
+
+} guiding_instructions;
+
+int check_string_in_double_quotes(char *name)
+{
+    int len;
+    len = strlen(name);
+
+    if (len == 0)
+    {
+        printf("The string's lenght empty (0). ERROR.\n");
+        return -1;
+    }
+
+    if ((name[0] == '"') && name[(len - 1)] == '"')
+    {
+        return 0;
+    }
+    printf("The string has no double quotes. ERROR.\n");
+    return -1;
+}
+
+int is_string_numeric(const char *str)
+{
+    int i = 0;
+    /* check whether string is not empty */
+    if (str[0] == '\0')
+    {
+        return 1;
+    }
+
+    if (str[0] == '+' || str[0] == '-') {
+        i++;
+    }
+    for (i; str[i] != '\0'; i++)
+    {
+        /* rc = 0 of isdigit func means the digit is not a number */
+        if ((isdigit(str[i])) == 0)
+            return 2;
+    }
+    return 0;
+}
+
+int handle_string_guide(char *name, int do_print_to_output_file)
+{
+    int len;
+    int i;
+    int rc;
+    char res_buff[MAX_ELEMENTS];
+
+    rc = check_string_in_double_quotes(name);
+    if (rc != 0)
+    {
+        printf("Invalid argument.\n");
+        return -1;
+    }
+
+    len = strlen(name);
+    if (do_print_to_output_file != 0)
+    {
+        for (i = 1; i < len - 1; i++)
+        {
+            printf("name: %c, binary: %s\n", name[i], itoa(name[i], res_buff, 2));
+        }
+
+        /* Add string null-terminator */
+        printf("name: %1c, binary: %s\n", 0, itoa(0, res_buff, 2));
+    }
+
+    return len - 1; /* add 1 for null terminator, substract 2 for double quotes */
+}
+
+char *trim_string_whitespace(char *input)
+{
+    char *end_input;
+
+    /* get rid of white spaces in start of string */
+    while (isspace((unsigned char)*input))
+    {
+        input++;
+    }
+
+    /* if no white spaces, return the string */
+    if (*input == '\0')
+    {
+        return input;
+    }
+
+    /* get rid of white spaces in end of string */
+    end_input = input + strlen(input) - 1;
+    while (end_input > input && isspace((unsigned char)*end_input))
+    {
+        end_input--;
+    }
+
+    /* place '\0' in end of string AFTER remove trailing spaces*/
+    end_input[1] = '\0';
+
+    return input;
+}
+
+int handle_data_guide(char *name, int do_print_to_output_file)
+{
+    int size = 0;
+    int val_split_decimal;
+    char *split = NULL;
+    char res_buff[MAX_ELEMENTS];
+    split = strtok(name, ",");
+    while (split != NULL)
+    {
+        split = trim_string_whitespace(split);
+        if (is_string_numeric(split) != 0)
+        {            
+            return -1;
+        }
+
+        val_split_decimal = atoi(split);
+        printf("name: %s, decimal: %d, binary: %s\n", split, val_split_decimal, itoa(val_split_decimal, res_buff, 2));
+        split = strtok(NULL, ",");
+        size++;
+    }
+
+    return size;
+}
+
+int handle_struct_guide(char *name, int do_print_to_output_file)
+{
+    int rc;
+    char *split = NULL;
+    int val_split_decimal;
+    char res_buff[MAX_ELEMENTS];
+
+    split = strtok(name, ",");
+    split = trim_string_whitespace(split);
+
+    if (is_string_numeric(split) != 0)
+    {
+        printf("Failed reading the first element (%s) in the struct guide (should be decimal).", split);
+        return -1;
+    }
+
+    val_split_decimal = atoi(split);
+
+    if (do_print_to_output_file)
+    {
+        printf("name: %d, binary: %s\n", val_split_decimal, itoa(val_split_decimal, res_buff, 2));
+    }
+
+    split = strtok(NULL, "\n");
+    split = trim_string_whitespace(split);
+
+    rc = handle_string_guide(split, do_print_to_output_file);
+    if (rc == -1)
+    {
+        printf("Failed reading the second element (%s) in the struct guide (should be a string).", split);
+        return -1;
+    }
+
+    /* struct always has one word which is the int in the first (left) member */
+    return rc + 1;
+}
+
+/* identify the guiding type */
+
+guiding_instructions get_guide_type(char *name)
+{
+    char *split = NULL;
+    split = strtok(&name[1], " ");
+    split = trim_string_whitespace(split);
+    // char * name_guide = strstr(name, entry_guide);
+    if (strcmp(split, "entry") == 0)
+        return entry_guide;
+    if (strcmp(split, "extern") == 0)
+        return extern_guide;
+    if (strcmp(split, "string") == 0)
+        return string_guide;
+    if (strcmp(split, "data") == 0)
+        return data_guide;
+    if (strcmp(split, "struct") == 0)
+        return struct_guide;
+    return invalid_guide;
+}
+
 /* the cell struct contains the value var with 10 bits
 to represent the "word" of the machine code instructions.
 */
@@ -102,7 +294,7 @@ int find_line_number(Node *head, const char *name)
     while (head != NULL)
     {
         if (strcmp(head->tag, name) == 0)
-            return head->line_number;
+            return head->address;
         head = head->next;
     }
     return -1;
@@ -131,7 +323,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
 int validate_register_operand(const char *operand);
 int validate_immediate_operand(const char *operand);
 int validate_direct_operand(const char *operand);
-int validate_struct_operand(char *operand);
+int validate_struct_operand(char *operand, int validate_label);
 int validate_two_words_in_cmd(char *split, char *first_operand);
 int validate_three_words_in_cmd(char *split, char *first_operand, char *second_operand);
 void print_elements_in_cell(cell *cell_array, int num_of_elements);
@@ -147,11 +339,11 @@ void set_dst_type(cell *cell_array, int dst, int element, int shift);
  set_dst_type
 */
 
-operand_type get_operand_type(const char *operand)
+operand_type get_operand_type(const char *operand, int validate_label)
 {
     int rc;
     char tmp_operand[OPERAND_SIZE];
-    
+
     rc = validate_register_operand(operand);
     if (rc == 0)
     {
@@ -162,17 +354,25 @@ operand_type get_operand_type(const char *operand)
     {
         return immediate_operand;
     }
-    rc = validate_direct_operand(operand);
-    if (rc == 0)
-    {
-        return direct_operand;
-    }
 
     strcpy(tmp_operand, operand);
-    rc = validate_struct_operand(tmp_operand);
+    rc = validate_struct_operand(tmp_operand, validate_label);
     if (rc == 0)
     {
         return struct_operand;
+    }
+
+    if (validate_label != 0)
+    {
+        rc = validate_direct_operand(operand);
+        if (rc == 0)
+        {
+            return direct_operand;
+        }
+    }
+    else
+    {
+        return direct_operand;
     }
 
     return invalid_operand;
@@ -227,7 +427,7 @@ int handle_operand_words(operand_type type, cell *cell_array, unsigned int index
         c_operand_word.value = value[0] << LEFT_SHIFT_BY_TWO;
         cell_array[index_element] = c_operand_word;
         c_operand_second_word.value = value[1] << LEFT_SHIFT_BY_TWO;
-        cell_array[index_element+1] = c_operand_second_word;
+        cell_array[index_element + 1] = c_operand_second_word;
         return 2;
         break;
     case register_operand:
@@ -297,35 +497,6 @@ operation_info operations[] = {
      .opcode = hlt,
      .operand_num = 0},
 };
-
-char *trim_string_whitespace(char *input)
-{
-    char *end_input;
-
-    /* get rid of white spaces in start of string */
-    while (isspace((unsigned char)*input))
-    {
-        input++;
-    }
-
-    /* if no white spaces, return the string */
-    if (*input == '\0')
-    {
-        return input;
-    }
-
-    /* get rid of white spaces in end of string */
-    end_input = input + strlen(input) - 1;
-    while (end_input > input && isspace((unsigned char)*end_input))
-    {
-        end_input--;
-    }
-
-    /* place '\0' in end of string AFTER remove trailing spaces*/
-    end_input[1] = '\0';
-
-    return input;
-}
 
 void pre_processor()
 {
@@ -400,17 +571,151 @@ void pre_processor()
     fclose(fp_write_to);
 }
 
+int handle_guide_line(char *guide, int do_print_to_output_file)
+{
+    int rc;
+    char *split = NULL;
+    guiding_instructions guide_rc;
+
+    guide_rc = get_guide_type(guide);
+    split = strtok(NULL, "\n");
+
+    switch (guide_rc)
+    {
+    case entry_guide:
+        printf("split: %s is an entry\n", split);
+        break;
+    case extern_guide:
+        printf("split: %s is an extern\n", split);
+        break;
+    case string_guide:
+        printf("split: %s is a string\n", split);
+        rc = handle_string_guide(split, do_print_to_output_file);
+        if (rc == -1)
+        {
+            printf("string guiding instruction (%s) is wrong.\n", split);
+            return -1;
+        }
+        break;
+    case data_guide:
+        printf("split: %s is a data\n", split);
+        rc = handle_data_guide(split, do_print_to_output_file);
+        if (rc == -1)
+        {
+            printf("data guiding instruction (%s) is wrong.\n", split);
+            return -1;
+        }
+        break;
+    case struct_guide:
+        printf("split: %s is a struct\n", split);
+        rc = handle_struct_guide(split, do_print_to_output_file);
+        if (rc == -1)
+        {
+            printf("struct guiding instruction (%s) is wrong.\n", split);
+            return -1;
+        }
+        break;
+    default:
+        printf("invalid guiding operand: %s", split);
+        return -1;
+    }
+
+    return rc;
+}
+
+int get_guide_line_length_in_words(char *guide)
+{
+    return handle_guide_line(guide, 0);
+}
+
+int get_operand_length_in_words(operand_type operand)
+{
+    switch (operand)
+    {
+    case register_operand:
+    case immediate_operand:
+    case direct_operand:
+        return 1;
+    case struct_operand:
+        return 2;
+    default:
+        return 0;
+    }
+}
+
+int get_operation_line_length_in_words(char *operands)
+{
+    char *split = NULL;
+    int size = 1;
+    operand_type src_type = invalid_operand, dst_type = invalid_operand;
+
+    split = strtok(operands, ",");
+    if (split != NULL)
+    {
+        split = trim_string_whitespace(split);
+        src_type = get_operand_type(split, 0);
+        size += get_operand_length_in_words(src_type);
+    }
+
+    split = strtok(NULL, "\n");
+    if (split != NULL)
+    {
+        split = trim_string_whitespace(split);
+        dst_type = get_operand_type(split, 0);
+        size += get_operand_length_in_words(dst_type);
+    }
+
+    if (src_type == register_operand && dst_type == register_operand)
+    {
+        return 2;
+    }
+
+    return size;
+}
+
+int get_line_length_in_words(char *line)
+{
+    int size = 0, i;
+    char *split = NULL;
+    int is_operation = 0;
+
+    if (line[0] == '.')
+    {
+        return get_guide_line_length_in_words(line);
+    }
+
+    split = strtok(line, " ");
+    split = trim_string_whitespace(split);
+
+    for (i = 0; i < sizeof(operations) / sizeof(operations[0]); i++)
+    {
+        if (strcmp(split, operations[i].name) == 0)
+        {
+            is_operation = 1;
+            break;
+        }
+    }
+
+    if (is_operation == 0)
+    {
+        return -1;
+    }
+
+    split = strtok(NULL, "\n");
+    return get_operation_line_length_in_words(split);
+}
+
 void first_pass()
 {
-
+    int ic = 0, dc = 0, line_length;
     FILE *fp;
     char *split = NULL;
-    int lines_count = 0;
     char file_name_fp[] = "lists_c.txt";
     char line[80];
     int index = 0;
     int len_linked_list = 0;
     size_t len_line;
+    int had_label;
 
     /* init first node */
     Node *new_node = NULL;
@@ -428,28 +733,58 @@ void first_pass()
 
     while (fgets(line, sizeof(line), fp))
     {
-
-        len_line = strlen(line);
-        split = strtok(line, ":");
-        if (strlen(split) == len_line)
+        had_label = 0;
+        split = trim_string_whitespace(line);
+        if (split[0] == ';' || split[0] == '\0')
         {
-            lines_count++;
             continue;
         }
-        printf("tag is: %s\n", split);
-        /* create a new node in the linked list */
-        new_node = insert_to_end(head);
-        if (head == NULL)
+
+        len_line = strlen(split);
+        split = strtok(split, ":");
+        if (strlen(split) != len_line)
         {
-            head = new_node;
+            printf("tag is: %s at ic= %d, dc = %d\n", split, ic, dc);
+            /* create a new node in the linked list */
+            new_node = insert_to_end(head);
+            if (head == NULL)
+            {
+                head = new_node;
+            }
+
+            current = new_node;
+            /* add the tag and the line number to the node */
+            strcpy(current->tag, split);
+            had_label = 1;
+
+            split = strtok(NULL, "\n");
+            split = trim_string_whitespace(split);
         }
-
-        current = new_node;
-
-        /* add the tag and the line number to the node */
-        strcpy(current->tag, split);
-        current->line_number = lines_count;
-        lines_count++;
+        
+        line_length = get_line_length_in_words(split);
+        if (line_length == -1)
+        {
+            printf("ERROR - Invalid line length in %s\n", line);
+            continue;
+        }
+        
+        if (split[0] == '.')
+        {
+            /* guide line */
+            if (had_label) {
+                current->address = dc;
+            }
+            printf("Adding len %d to dc=%d\n", line_length, dc);
+            dc += line_length;
+        }
+        else
+        {
+            /* operation line */
+            if (had_label) {
+                current->address = ic;
+            }
+            ic += line_length;
+        }        
     }
     fclose(fp);
 
@@ -461,7 +796,7 @@ void first_pass()
     printf("----- Printing the nodes in a user friendly manner:\n");
     while (current != NULL)
     {
-        printf("tag is: %s, line number: %d\n", current->tag, current->line_number);
+        printf("tag is: %s, address: %d\n", current->tag, current->address);
         printf("\n");
         current = current->next;
     }
@@ -474,8 +809,6 @@ int second_pass()
     int i;
     int len_line;
     char *split = NULL;
-    /* temp solution - process the instruction */
-    // char inst[] = "hlt";
     char line[80];
 
     FILE *fp = fopen("lists_c.txt", "r");
@@ -494,12 +827,16 @@ int second_pass()
     int num_of_elements;
     char first_operand[OPERAND_SIZE];
     char second_operand[OPERAND_SIZE];
-    cell cell_array[5];
-    int rc;
+    cell cell_array[MAX_ELEMENTS_IN_CELL];
+    int rc;    
     int is_found = 0;
 
     while (fgets(line, sizeof(line), fp))
     {
+
+        /* make sure the line is trimmed before start processing it */
+        split = trim_string_whitespace(line);
+
         /* read each line and parse it */
 
         /* ignore lines that starts with ';' */
@@ -527,9 +864,16 @@ int second_pass()
 
         if (split[0] == '.')
         {
+            /* verify type of guiding line (can be extern, entry, data, string or struct) */
+            if (handle_guide_line(split, 1) == -1)
+            {
+                printf("ERROR - invalid guide line %s\n", split);
+            }
+
             continue;
         }
 
+        /* The memset() function sets the (TBD) TODO */
         memset(cell_array, 0, sizeof(cell_array));
         /* split is the cmd delimitered by " " */
         split = strtok(split, " ");
@@ -604,7 +948,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
     /* handle src operand */
     if (operand_source != NULL)
     {
-        type_source = get_operand_type(operand_source);
+        type_source = get_operand_type(operand_source, 1);
         if (type_source == invalid_operand)
         {
             printf("Failed handling the source type\n");
@@ -622,7 +966,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
     /* handle dest operand */
     if (operand_dest != NULL)
     {
-        type_dest = get_operand_type(operand_dest);
+        type_dest = get_operand_type(operand_dest, 1);
         if (type_dest == invalid_operand)
         {
             printf("Failed handling the source type\n");
@@ -687,21 +1031,6 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
 }
 
 /* validate functions */
-int is_string_numeric(const char *str)
-{
-    /* check whether string is not empty */
-    if (str[0] == '\0')
-    {
-        return 1;
-    }
-    for (int i = 0; str[i] != '\0'; i++)
-    {
-        /* rc = 0 of isdigit func means the digit is not a number */
-        if ((isdigit(str[i])) == 0)
-            return 2;
-    }
-    return 0;
-}
 
 int validate_immediate_operand(const char *operand)
 {
@@ -766,11 +1095,11 @@ int validate_direct_operand(const char *operand)
     return 1;
 }
 
-int validate_struct_operand(char *operand)
+int validate_struct_operand(char *operand, int validate_label)
 {
 
     int len_line;
-    char *split = NULL;    
+    char *split = NULL;
     len_line = strlen(operand);
     split = strtok(operand, ".");
 
@@ -781,11 +1110,14 @@ int validate_struct_operand(char *operand)
         return 1;
     }
 
-    /* validate left to the . delimieter */
-    if (find_line_number(head, operand) == -1)
+    if (validate_label != 0)
     {
-        printf("Error: left to '.' (%s) ia not a direct operand\n", split);
-        return 1;
+        /* validate left to the . delimieter */
+        if (find_line_number(head, operand) == -1)
+        {
+            printf("Error: left to '.' (%s) ia not a direct operand\n", split);
+            return 1;
+        }
     }
 
     /* validate right to the . delimieter */
@@ -910,7 +1242,7 @@ Node *new_node()
     tmp = (Node *)malloc(sizeof(Node));
     if (tmp != NULL)
     {
-        tmp->line_number = -1;
+        tmp->address = -1;
         tmp->next = NULL;
     }
     return tmp;
@@ -1014,8 +1346,8 @@ void macro_free_nodes_memory(MacroNode *head)
 int main()
 {
     // pre_processor();
-     first_pass();
-     second_pass();
+    first_pass();
+    // second_pass();
 
     // free_nodes_memory(head);
     return 0;
