@@ -24,12 +24,45 @@ validate like immediate
 #define MAX_ELEMENTS_FOR_MACRO 100
 #define OPERAND_SIZE 16
 #define MAX_ELEMENTS_IN_CELL 16
+#define RIGHT_SHIFT_BY_5 5
+
+typedef enum
+{
+    symbol_data,
+    symbol_string,
+    symbol_struct,
+    symbol_extern,
+    symbol_entry,
+    symbol_operation
+} symbol_type;
+
+/* enum of all possible guiding instruction types */
+typedef enum
+{
+    entry_guide = 0,
+    extern_guide = 1,
+    string_guide = 2,
+    data_guide = 3,
+    struct_guide = 4,
+    operation_guide = 5,
+
+    invalid_guide = 666
+} guiding_instructions;
+
+typedef enum
+{
+    encoding_absolute = 0,
+    encoding_extern = 1,
+    encoding_relocatable = 2
+} encoding_type;
 
 /* struct node to hold char of arrays to get from input file */
 typedef struct Node
 {
     int address;
     char tag[MAX_ELEMENTS];
+    guiding_instructions type;
+    int is_entry;
     struct Node *next;
 } Node;
 
@@ -58,6 +91,7 @@ MacroNode *macro_new_node();
 int macro_length(MacroNode *headMacro);
 void macro_free_nodes_memory(MacroNode *headMacro);
 
+/* enum of all possible operation codes */
 typedef enum
 {
     mov = 0,
@@ -78,6 +112,7 @@ typedef enum
     hlt = 15
 } opcodes;
 
+/* enum of all possible adressing methods of source and dest operands */
 typedef enum
 {
     immediate_operand = 0,
@@ -88,17 +123,32 @@ typedef enum
 
 } operand_type;
 
-typedef enum
-{
-    entry_guide = 0,
-    extern_guide = 1,
-    string_guide = 2,
-    data_guide = 3,
-    struct_guide = 4,
-    invalid_guide = 666
 
-} guiding_instructions;
+const char base32_array[] = "!@#$%^&*<>abcdefghijklmnopqrstuv";
 
+void convert_to_base_32(cell *cell_array){
+    /* mask right = 0000011111 */
+    int mask_right = 31;
+    int left_index_to_print, right_index_to_print;
+
+    /* left 5 bits of cell */
+    left_index_to_print = cell_array->value >> RIGHT_SHIFT_BY_5;
+    printf("left_index_to_print = %d, base32 = %c \n", left_index_to_print,  base32_array[left_index_to_print]);
+
+    /* right 5 bits of cell */
+    right_index_to_print = mask_right & cell_array->value;
+    printf("right_index_to_print = %d, base32 = %c \n", right_index_to_print,  base32_array[right_index_to_print]);
+
+}
+
+
+
+/**
+ * verify the string contains double quotes
+ *
+ * @param name  - pointer to a string to
+ * @return int  - return code ( 0 - okay, otherwise - failure)
+ */
 int check_string_in_double_quotes(char *name)
 {
     int len;
@@ -118,6 +168,12 @@ int check_string_in_double_quotes(char *name)
     return -1;
 }
 
+/**
+ * string is checked to verify it's numric or not
+ *
+ * @param str - a pointer to the string to check whether its numeric
+ * @return int - return code ( 0 - okay, otherwise - failure)
+ */
 int is_string_numeric(const char *str)
 {
     int i = 0;
@@ -127,7 +183,8 @@ int is_string_numeric(const char *str)
         return 1;
     }
 
-    if (str[0] == '+' || str[0] == '-') {
+    if (str[0] == '+' || str[0] == '-')
+    {
         i++;
     }
     for (i; str[i] != '\0'; i++)
@@ -168,6 +225,12 @@ int handle_string_guide(char *name, int do_print_to_output_file)
     return len - 1; /* add 1 for null terminator, substract 2 for double quotes */
 }
 
+/**
+ * every string is trimmed (start and end), and a pointer is returned to the "trimmed" string
+ *
+ * @param name  - pointer to a string to
+ * @return int  - return code ( 0 - okay, otherwise - failure)
+ */
 char *trim_string_whitespace(char *input)
 {
     char *end_input;
@@ -208,7 +271,7 @@ int handle_data_guide(char *name, int do_print_to_output_file)
     {
         split = trim_string_whitespace(split);
         if (is_string_numeric(split) != 0)
-        {            
+        {
             return -1;
         }
 
@@ -260,6 +323,12 @@ int handle_struct_guide(char *name, int do_print_to_output_file)
 
 /* identify the guiding type */
 
+/**
+ * Get the guide type object
+ *
+ * @param name - the guide string to parse
+ * @return guiding_instructions
+ */
 guiding_instructions get_guide_type(char *name)
 {
     char *split = NULL;
@@ -288,16 +357,15 @@ typedef struct cell
 } cell;
 
 /* search from word in the linked list */
-
-int find_line_number(Node *head, const char *name)
+Node *find_symbol(Node *head, const char *name)
 {
     while (head != NULL)
     {
         if (strcmp(head->tag, name) == 0)
-            return head->address;
+            return head;
         head = head->next;
     }
-    return -1;
+    return NULL;
 }
 
 /* search for tag in the macro linked list */
@@ -333,6 +401,7 @@ void print_elements_in_cell(cell *cell_array, int num_of_elements);
 void set_opcode(cell *cell_array, int opcode, int element, int shift);
 void set_field_type(cell *cell_array, int src, int element, int shift);
 void set_dst_type(cell *cell_array, int dst, int element, int shift);
+void set_encoding_type(cell *cell_array, int element, encoding_type type);
 /*
  set_opcode
  set_src_type
@@ -379,9 +448,10 @@ operand_type get_operand_type(const char *operand, int validate_label)
 }
 
 /* building the inst word (first element in array of words) */
-int handle_operand_addressing_method(operand_type type, char *operand, int *method, int *value)
+int handle_operand_addressing_method(operand_type type, char *operand, int *method, int *value, int *is_extern)
 {
     char *split = NULL;
+    Node *symbol = NULL;
 
     switch (type)
     {
@@ -392,7 +462,11 @@ int handle_operand_addressing_method(operand_type type, char *operand, int *meth
     case struct_operand:
         *method = 2;
         split = strtok(operand, ".");
-        value[0] = find_line_number(head, split);
+        symbol = find_symbol(head, split);
+        if (symbol->type == extern_guide) {
+            *is_extern = 1;
+        }
+        value[0] = symbol->address;
         split = strtok(NULL, ".");
         value[1] = atoi(split);
         break;
@@ -402,8 +476,13 @@ int handle_operand_addressing_method(operand_type type, char *operand, int *meth
         break;
     case direct_operand:
         *method = 1;
-        /* value is the line taken from the linked list build during the first bypass*/
-        *value = find_line_number(head, operand);
+        /* value is the address taken from the linked list build during the first bypass*/
+        symbol = find_symbol(head, operand);
+        *value = symbol->address;
+        if (symbol->type == extern_guide)
+        {
+            *is_extern = 1;
+        }
         break;
     default:
         return -1;
@@ -411,21 +490,32 @@ int handle_operand_addressing_method(operand_type type, char *operand, int *meth
     return 0;
 }
 
-int handle_operand_words(operand_type type, cell *cell_array, unsigned int index_element, int *value, int shift_only_for_register)
+int handle_operand_words(operand_type type, cell *cell_array, unsigned int index_element, int *value,
+                         int shift_only_for_register, int is_extern)
 {
     cell c_operand_word = {0};
     cell c_operand_second_word = {0};
+    encoding_type encoding;
+
     switch (type)
     {
     /* handle_operand_words for immediate_operand and direct_operand is the same*/
     case immediate_operand:
+        c_operand_word.value = value[0] << LEFT_SHIFT_BY_TWO;
+        cell_array[index_element] = c_operand_word;
+        return 1;
     case direct_operand:
         c_operand_word.value = value[0] << LEFT_SHIFT_BY_TWO;
         cell_array[index_element] = c_operand_word;
+        /* choose the correct encoding */
+        set_encoding_type(cell_array, index_element, (is_extern == 1) ? (encoding_extern) : (encoding_relocatable));
         return 1;
     case struct_operand:
         c_operand_word.value = value[0] << LEFT_SHIFT_BY_TWO;
         cell_array[index_element] = c_operand_word;
+         /* only the first word is struct (for example: S.1 so only "s" is relevant */
+        set_encoding_type(cell_array, index_element, (is_extern == 1) ? (encoding_extern) : (encoding_relocatable));
+
         c_operand_second_word.value = value[1] << LEFT_SHIFT_BY_TWO;
         cell_array[index_element + 1] = c_operand_second_word;
         return 2;
@@ -573,21 +663,53 @@ void pre_processor()
 
 int handle_guide_line(char *guide, int do_print_to_output_file)
 {
+    Node *symbol = NULL;
     int rc;
     char *split = NULL;
     guiding_instructions guide_rc;
 
     guide_rc = get_guide_type(guide);
+
     split = strtok(NULL, "\n");
+    split = trim_string_whitespace(split);
 
     switch (guide_rc)
     {
     case entry_guide:
-        printf("split: %s is an entry\n", split);
-        break;
+        /* look for the entry in symbols linked list
+        if found - set is_entry to true
+        else - throw an error and move on
+        */
+        symbol = find_symbol(head, split);
+        if (symbol != NULL)
+        {
+            symbol->is_entry = 1;
+        }
+        else
+        {
+            printf("ERROR: The entry (%s) cannot be found.", split);
+        }
+        /* return 0 "words" as nothing should be printed */
+        return 0;
     case extern_guide:
-        printf("split: %s is an extern\n", split);
-        break;
+        symbol = find_symbol(head, split);
+        if (symbol != NULL)
+        {
+            printf("ERROR: The extern (%s) was found in symbols table.", split);
+        }
+        else
+        {
+            symbol = insert_to_end(head);
+            if (head == NULL)
+            {
+                head = symbol;
+            }
+            symbol->address = 0;
+            symbol->type = extern_guide;
+            strcpy(symbol->tag, split);
+        }
+        /* return 0 "words" as nothing should be printed */
+        return 0;
     case string_guide:
         printf("split: %s is a string\n", split);
         rc = handle_string_guide(split, do_print_to_output_file);
@@ -753,26 +875,28 @@ void first_pass()
             }
 
             current = new_node;
-            /* add the tag and the line number to the node */
+            /* add the tag to the node */
             strcpy(current->tag, split);
             had_label = 1;
 
             split = strtok(NULL, "\n");
             split = trim_string_whitespace(split);
         }
-        
+
         line_length = get_line_length_in_words(split);
         if (line_length == -1)
         {
             printf("ERROR - Invalid line length in %s\n", line);
             continue;
         }
-        
+
         if (split[0] == '.')
         {
             /* guide line */
-            if (had_label) {
+            if (had_label)
+            {
                 current->address = dc;
+                current->type = get_guide_type(split);
             }
             printf("Adding len %d to dc=%d\n", line_length, dc);
             dc += line_length;
@@ -780,11 +904,13 @@ void first_pass()
         else
         {
             /* operation line */
-            if (had_label) {
+            if (had_label)
+            {
                 current->address = ic;
+                current->type = operation_guide;
             }
             ic += line_length;
-        }        
+        }
     }
     fclose(fp);
 
@@ -828,7 +954,7 @@ int second_pass()
     char first_operand[OPERAND_SIZE];
     char second_operand[OPERAND_SIZE];
     cell cell_array[MAX_ELEMENTS_IN_CELL];
-    int rc;    
+    int rc;
     int is_found = 0;
 
     while (fgets(line, sizeof(line), fp))
@@ -850,6 +976,7 @@ int second_pass()
         /* check for lables by looking for the ":" delimiter */
         len_line = strlen(line);
         split = strtok(line, ":");
+        /* if strlen(split) == len_line then it means there is no ":" in the cmd*/
         if (strlen(split) != len_line)
         {
             /* there is ":" in line*/
@@ -858,10 +985,7 @@ int second_pass()
             split = trim_string_whitespace(split);
         }
 
-        /* if strlen(split) == len_line then it means there is no ":" in the cmd*/
-
         /* check for starting with "." */
-
         if (split[0] == '.')
         {
             /* verify type of guiding line (can be extern, entry, data, string or struct) */
@@ -884,6 +1008,7 @@ int second_pass()
             {
                 is_found = 1;
                 printf("operator %s is valid\n", split);
+                /* operand_num - how many operands should be handled */
                 switch (operations[i].operand_num)
                 {
                 case 0:
@@ -918,7 +1043,6 @@ int second_pass()
 
         print_elements_in_cell(cell_array, num_of_elements);
 
-        /* operations with ze
         /* operations that are not listed in the opcodes table - fail with error */
         if (!is_found)
         {
@@ -941,6 +1065,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
     int src = 0, dst = 0, element;
     int rc;
     int num_words;
+    int src_is_extern = 0, dst_is_extern = 0;
 
     cell c_source_word = {0};
     cell c_dest_word = {0};
@@ -955,7 +1080,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
             return -1;
         }
 
-        rc = handle_operand_addressing_method(type_source, operand_source, &src, value_num_source);
+        rc = handle_operand_addressing_method(type_source, operand_source, &src, value_num_source, &src_is_extern);
         if (rc != 0)
         {
             printf("Failed handling the source addressing method\n");
@@ -973,7 +1098,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
             return -1;
         }
 
-        rc = handle_operand_addressing_method(type_dest, operand_dest, &dst, value_num_dest);
+        rc = handle_operand_addressing_method(type_dest, operand_dest, &dst, value_num_dest, &dst_is_extern);
         if (rc != 0)
         {
             printf("Failed handling the dest addressing method\n");
@@ -1001,7 +1126,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
 
     if (operand_source != NULL)
     { /* handle source operand - the handle_operand_words funciton contains another switch case per each case*/
-        num_words = handle_operand_words(type_source, cell_array, element, value_num_source, LEFT_SHIFT_BY_SIX);
+        num_words = handle_operand_words(type_source, cell_array, element, value_num_source, LEFT_SHIFT_BY_SIX, src_is_extern);
 
         if (num_words == -1)
         {
@@ -1015,7 +1140,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
     /* handle dest operand  */
     if (operand_dest != NULL)
     {
-        num_words = handle_operand_words(type_dest, cell_array, element, value_num_dest, LEFT_SHIFT_BY_TWO);
+        num_words = handle_operand_words(type_dest, cell_array, element, value_num_dest, LEFT_SHIFT_BY_TWO, dst_is_extern);
 
         if (num_words == -1)
         {
@@ -1086,7 +1211,7 @@ int validate_register_operand(const char *operand)
 
 int validate_direct_operand(const char *operand)
 {
-    if (find_line_number(head, operand) != -1)
+    if (find_symbol(head, operand) != NULL)
     {
         /* operand was found in linked list, return 0 */
         return 0;
@@ -1113,7 +1238,7 @@ int validate_struct_operand(char *operand, int validate_label)
     if (validate_label != 0)
     {
         /* validate left to the . delimieter */
-        if (find_line_number(head, operand) == -1)
+        if (find_symbol(head, operand) == NULL)
         {
             printf("Error: left to '.' (%s) ia not a direct operand\n", split);
             return 1;
@@ -1229,6 +1354,14 @@ void set_dst_type(cell *cell_array, int dst, int element, int shift)
     cell_array[element].value |= mask;
 }
 
+void set_encoding_type(cell *cell_array, int element, encoding_type type)
+{
+    int mask;
+    /* mask is the encoding type, for example: relocate = 2 */
+    mask = type;
+    cell_array[element].value |= mask;
+}
+
 void set_opcode(cell *cell_array, int opcode, int element, int shift)
 {
     cell_array[element].value = opcode << shift;
@@ -1244,6 +1377,8 @@ Node *new_node()
     {
         tmp->address = -1;
         tmp->next = NULL;
+        tmp->type = invalid_guide;
+        tmp->is_entry = 0;
     }
     return tmp;
 }
@@ -1347,8 +1482,14 @@ int main()
 {
     // pre_processor();
     first_pass();
-    // second_pass();
+    second_pass();
 
     // free_nodes_memory(head);
+    Node *current = head;
+    while (current)
+    {
+        printf("Symbol %s: type %d, address %d, entry? %d\n", current->tag, current->type, current->address, current->is_entry);
+        current = current->next;
+    }
     return 0;
 }
