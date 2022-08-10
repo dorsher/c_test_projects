@@ -74,8 +74,21 @@ typedef struct MacroNode
     struct MacroNode *next;
 } MacroNode;
 
+typedef unsigned short cell_value_type;
+
+/* the cell struct contains the value var with 10 bits
+to represent the "word" of the machine code instructions.
+*/
+typedef struct cell
+{
+    cell_value_type value : 10;
+} cell;
+
 Node *head = NULL;
 MacroNode *headMacro = NULL;
+
+/* address ia a static var that is accessible in this function to increment by 1 the word count (both ic & dc)*/
+static cell_value_type current_address = 100;
 
 /* Declaring functions to be used */
 
@@ -90,6 +103,17 @@ MacroNode *macro_insert_to_end(MacroNode *headMacro);
 MacroNode *macro_new_node();
 int macro_length(MacroNode *headMacro);
 void macro_free_nodes_memory(MacroNode *headMacro);
+
+/* oprand validator function prototypes*/
+
+int validate_register_operand(const char *operand);
+int validate_immediate_operand(const char *operand);
+int validate_direct_operand(const char *operand);
+int validate_struct_operand(char *operand, int validate_label);
+int validate_two_words_in_cmd(char *split, char *first_operand);
+int validate_three_words_in_cmd(char *split, char *first_operand, char *second_operand);
+void print_element_with_address(cell_value_type value, FILE *obj_file);
+void print_elements_in_cell(cell *cell_array, int num_of_elements, FILE *obj_file);
 
 /* enum of all possible operation codes */
 typedef enum
@@ -123,25 +147,26 @@ typedef enum
 
 } operand_type;
 
-
 const char base32_array[] = "!@#$%^&*<>abcdefghijklmnopqrstuv";
 
-void convert_to_base_32(cell *cell_array){
-    /* mask right = 0000011111 */
+void write_as_base_32(cell_value_type value, FILE *fp)
+{
     int mask_right = 31;
     int left_index_to_print, right_index_to_print;
 
     /* left 5 bits of cell */
-    left_index_to_print = cell_array->value >> RIGHT_SHIFT_BY_5;
-    printf("left_index_to_print = %d, base32 = %c \n", left_index_to_print,  base32_array[left_index_to_print]);
+    left_index_to_print = (value >> RIGHT_SHIFT_BY_5) & mask_right;
+    printf("left_index_to_print = %d, base32 = %c \n", left_index_to_print, base32_array[left_index_to_print]);
 
-    /* right 5 bits of cell */
-    right_index_to_print = mask_right & cell_array->value;
-    printf("right_index_to_print = %d, base32 = %c \n", right_index_to_print,  base32_array[right_index_to_print]);
-
+    /* right 5 bits of cell
+    mask right = 0000011111
+    with & of:   cell_array->value
+    only the right 5 bits are handled
+    */
+    right_index_to_print = mask_right & value;
+    printf("right_index_to_print = %d, base32 = %c \n", right_index_to_print, base32_array[right_index_to_print]);
+    fprintf(fp, "%c%c", base32_array[left_index_to_print], base32_array[right_index_to_print]);
 }
-
-
 
 /**
  * verify the string contains double quotes
@@ -196,7 +221,7 @@ int is_string_numeric(const char *str)
     return 0;
 }
 
-int handle_string_guide(char *name, int do_print_to_output_file)
+int handle_string_guide(char *name, FILE *output_file)
 {
     int len;
     int i;
@@ -211,15 +236,18 @@ int handle_string_guide(char *name, int do_print_to_output_file)
     }
 
     len = strlen(name);
-    if (do_print_to_output_file != 0)
+    if (output_file != NULL)
     {
         for (i = 1; i < len - 1; i++)
         {
             printf("name: %c, binary: %s\n", name[i], itoa(name[i], res_buff, 2));
+            /* output_file here is the data temporary file - save value in DECIMAL form */
+            fprintf(output_file, "%d\n", name[i]);
         }
 
         /* Add string null-terminator */
         printf("name: %1c, binary: %s\n", 0, itoa(0, res_buff, 2));
+        fprintf(output_file, "%d\n", 0);
     }
 
     return len - 1; /* add 1 for null terminator, substract 2 for double quotes */
@@ -260,10 +288,10 @@ char *trim_string_whitespace(char *input)
     return input;
 }
 
-int handle_data_guide(char *name, int do_print_to_output_file)
+int handle_data_guide(char *name, FILE *output_file)
 {
     int size = 0;
-    int val_split_decimal;
+    cell_value_type val_split_decimal;
     char *split = NULL;
     char res_buff[MAX_ELEMENTS];
     split = strtok(name, ",");
@@ -276,7 +304,14 @@ int handle_data_guide(char *name, int do_print_to_output_file)
         }
 
         val_split_decimal = atoi(split);
-        printf("name: %s, decimal: %d, binary: %s\n", split, val_split_decimal, itoa(val_split_decimal, res_buff, 2));
+
+        if (output_file != NULL)
+        {
+            printf("name: %s, decimal: %d, binary: %s\n", split, val_split_decimal, itoa(val_split_decimal, res_buff, 2));
+            /* output_file here is the data temporary file - save value in DECIMAL form */
+            fprintf(output_file, "%d\n", val_split_decimal);
+        }
+
         split = strtok(NULL, ",");
         size++;
     }
@@ -284,11 +319,11 @@ int handle_data_guide(char *name, int do_print_to_output_file)
     return size;
 }
 
-int handle_struct_guide(char *name, int do_print_to_output_file)
+int handle_struct_guide(char *name, FILE *output_file)
 {
     int rc;
     char *split = NULL;
-    int val_split_decimal;
+    cell_value_type val_split_decimal;
     char res_buff[MAX_ELEMENTS];
 
     split = strtok(name, ",");
@@ -302,15 +337,17 @@ int handle_struct_guide(char *name, int do_print_to_output_file)
 
     val_split_decimal = atoi(split);
 
-    if (do_print_to_output_file)
+    if (output_file != NULL)
     {
         printf("name: %d, binary: %s\n", val_split_decimal, itoa(val_split_decimal, res_buff, 2));
+        /* output_file here is the data temporary file - save value in DECIMAL form */
+        fprintf(output_file, "%d\n", val_split_decimal);
     }
 
     split = strtok(NULL, "\n");
     split = trim_string_whitespace(split);
 
-    rc = handle_string_guide(split, do_print_to_output_file);
+    rc = handle_string_guide(split, output_file);
     if (rc == -1)
     {
         printf("Failed reading the second element (%s) in the struct guide (should be a string).", split);
@@ -348,14 +385,6 @@ guiding_instructions get_guide_type(char *name)
     return invalid_guide;
 }
 
-/* the cell struct contains the value var with 10 bits
-to represent the "word" of the machine code instructions.
-*/
-typedef struct cell
-{
-    unsigned short value : 10;
-} cell;
-
 /* search from word in the linked list */
 Node *find_symbol(Node *head, const char *name)
 {
@@ -384,17 +413,7 @@ char *find_macro_tag(MacroNode *head, const char *name)
 /* decalre function prototypes*/
 
 /* two operand function prototypes*/
-int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *operand_dest);
-
-/* oprand validator function prototypes*/
-
-int validate_register_operand(const char *operand);
-int validate_immediate_operand(const char *operand);
-int validate_direct_operand(const char *operand);
-int validate_struct_operand(char *operand, int validate_label);
-int validate_two_words_in_cmd(char *split, char *first_operand);
-int validate_three_words_in_cmd(char *split, char *first_operand, char *second_operand);
-void print_elements_in_cell(cell *cell_array, int num_of_elements);
+int do_operation(opcodes opcode, cell *cell_array, FILE *externs_file, char *operand_source, char *operand_dest);
 
 /* decalre bitwise operator functions */
 
@@ -448,7 +467,7 @@ operand_type get_operand_type(const char *operand, int validate_label)
 }
 
 /* building the inst word (first element in array of words) */
-int handle_operand_addressing_method(operand_type type, char *operand, int *method, int *value, int *is_extern)
+int handle_operand_addressing_method(operand_type type, char *operand, int *method, int *value,const char **is_extern, FILE *externs_file)
 {
     char *split = NULL;
     Node *symbol = NULL;
@@ -463,8 +482,9 @@ int handle_operand_addressing_method(operand_type type, char *operand, int *meth
         *method = 2;
         split = strtok(operand, ".");
         symbol = find_symbol(head, split);
-        if (symbol->type == extern_guide) {
-            *is_extern = 1;
+        if (symbol->type == extern_guide)
+        {
+            *is_extern = symbol->tag;
         }
         value[0] = symbol->address;
         split = strtok(NULL, ".");
@@ -481,7 +501,7 @@ int handle_operand_addressing_method(operand_type type, char *operand, int *meth
         *value = symbol->address;
         if (symbol->type == extern_guide)
         {
-            *is_extern = 1;
+            *is_extern = symbol->tag;
         }
         break;
     default:
@@ -491,11 +511,18 @@ int handle_operand_addressing_method(operand_type type, char *operand, int *meth
 }
 
 int handle_operand_words(operand_type type, cell *cell_array, unsigned int index_element, int *value,
-                         int shift_only_for_register, int is_extern)
+                         int shift_only_for_register, const char *extern_symbol, FILE *externs_file)
 {
     cell c_operand_word = {0};
     cell c_operand_second_word = {0};
     encoding_type encoding;
+
+    if (extern_symbol != NULL)
+    {
+        fprintf(externs_file, "%s\t", extern_symbol);
+        write_as_base_32(current_address + index_element, externs_file);
+        fputs("\n", externs_file);
+    }
 
     switch (type)
     {
@@ -508,13 +535,13 @@ int handle_operand_words(operand_type type, cell *cell_array, unsigned int index
         c_operand_word.value = value[0] << LEFT_SHIFT_BY_TWO;
         cell_array[index_element] = c_operand_word;
         /* choose the correct encoding */
-        set_encoding_type(cell_array, index_element, (is_extern == 1) ? (encoding_extern) : (encoding_relocatable));
+        set_encoding_type(cell_array, index_element, (extern_symbol != NULL) ? (encoding_extern) : (encoding_relocatable));
         return 1;
     case struct_operand:
         c_operand_word.value = value[0] << LEFT_SHIFT_BY_TWO;
         cell_array[index_element] = c_operand_word;
-         /* only the first word is struct (for example: S.1 so only "s" is relevant */
-        set_encoding_type(cell_array, index_element, (is_extern == 1) ? (encoding_extern) : (encoding_relocatable));
+        /* only the first word is struct (for example: S.1 so only "s" is relevant */
+        set_encoding_type(cell_array, index_element, (extern_symbol != NULL) ? (encoding_extern) : (encoding_relocatable));
 
         c_operand_second_word.value = value[1] << LEFT_SHIFT_BY_TWO;
         cell_array[index_element + 1] = c_operand_second_word;
@@ -610,7 +637,7 @@ void pre_processor()
         exit(1);
     }
 
-    fp_write_to = fopen("lists_c_COPY_AM.txt", "w");
+    fp_write_to = fopen("lists_c.am", "w");
     while (fgets(line, sizeof(line), fp_read_from))
     {
         split = trim_string_whitespace(line);
@@ -661,7 +688,7 @@ void pre_processor()
     fclose(fp_write_to);
 }
 
-int handle_guide_line(char *guide, int do_print_to_output_file)
+int handle_guide_line(char *guide, FILE *output_file)
 {
     Node *symbol = NULL;
     int rc;
@@ -712,7 +739,7 @@ int handle_guide_line(char *guide, int do_print_to_output_file)
         return 0;
     case string_guide:
         printf("split: %s is a string\n", split);
-        rc = handle_string_guide(split, do_print_to_output_file);
+        rc = handle_string_guide(split, output_file);
         if (rc == -1)
         {
             printf("string guiding instruction (%s) is wrong.\n", split);
@@ -721,7 +748,7 @@ int handle_guide_line(char *guide, int do_print_to_output_file)
         break;
     case data_guide:
         printf("split: %s is a data\n", split);
-        rc = handle_data_guide(split, do_print_to_output_file);
+        rc = handle_data_guide(split, output_file);
         if (rc == -1)
         {
             printf("data guiding instruction (%s) is wrong.\n", split);
@@ -730,7 +757,7 @@ int handle_guide_line(char *guide, int do_print_to_output_file)
         break;
     case struct_guide:
         printf("split: %s is a struct\n", split);
-        rc = handle_struct_guide(split, do_print_to_output_file);
+        rc = handle_struct_guide(split, output_file);
         if (rc == -1)
         {
             printf("struct guiding instruction (%s) is wrong.\n", split);
@@ -747,7 +774,7 @@ int handle_guide_line(char *guide, int do_print_to_output_file)
 
 int get_guide_line_length_in_words(char *guide)
 {
-    return handle_guide_line(guide, 0);
+    return handle_guide_line(guide, NULL);
 }
 
 int get_operand_length_in_words(operand_type operand)
@@ -767,23 +794,24 @@ int get_operand_length_in_words(operand_type operand)
 
 int get_operation_line_length_in_words(char *operands)
 {
-    char *split = NULL;
+    char *split_src = NULL, *split_dst = NULL;
     int size = 1;
     operand_type src_type = invalid_operand, dst_type = invalid_operand;
 
-    split = strtok(operands, ",");
-    if (split != NULL)
+    split_src = strtok(operands, ",");
+    split_dst = strtok(NULL, "\n");
+
+    if (split_src != NULL)
     {
-        split = trim_string_whitespace(split);
-        src_type = get_operand_type(split, 0);
+        split_src = trim_string_whitespace(split_src);
+        src_type = get_operand_type(split_src, 0);
         size += get_operand_length_in_words(src_type);
     }
 
-    split = strtok(NULL, "\n");
-    if (split != NULL)
+    if (split_dst != NULL)
     {
-        split = trim_string_whitespace(split);
-        dst_type = get_operand_type(split, 0);
+        split_dst = trim_string_whitespace(split_dst);
+        dst_type = get_operand_type(split_dst, 0);
         size += get_operand_length_in_words(dst_type);
     }
 
@@ -827,12 +855,12 @@ int get_line_length_in_words(char *line)
     return get_operation_line_length_in_words(split);
 }
 
-void first_pass()
+void first_pass(FILE *obj_file)
 {
-    int ic = 0, dc = 0, line_length;
+    int ic = 100, dc = 0, line_length;
     FILE *fp;
     char *split = NULL;
-    char file_name_fp[] = "lists_c.txt";
+    char file_name_fp[] = "lists_c.am";
     char line[80];
     int index = 0;
     int len_linked_list = 0;
@@ -914,6 +942,20 @@ void first_pass()
     }
     fclose(fp);
 
+    current = head;
+
+    while (current != NULL)
+    {
+        /* Add IC to data lines to put them in the correct index in memory */
+        if (current->type == struct_guide || current->type == string_guide ||
+            current->type == data_guide)
+        {
+            current->address += ic;
+        }
+
+        current = current->next;
+    }
+
     len_linked_list = length(head);
     printf("\n\n----- There are %d elements in the linked list.\n", len_linked_list);
     current = head;
@@ -927,17 +969,26 @@ void first_pass()
         current = current->next;
     }
     /* when done free the memory of all elements in struct by running in a loop from last to first*/
+
+    /* ic and dc in head of file*/
+
+    write_as_base_32(ic - 100, obj_file);
+    fputs(" ", obj_file);
+    write_as_base_32(dc, obj_file);
+    fputs("\n", obj_file);
 }
 
-int second_pass()
+int second_pass(FILE *obj_file)
 {
 
     int i;
     int len_line;
     char *split = NULL;
     char line[80];
+    FILE *tmp_data_file = fopen("project_c_data.tmp", "w");
+    FILE *externs_file = fopen("doron.ext", "w");
+    FILE *fp = fopen("lists_c.am", "r");
 
-    FILE *fp = fopen("lists_c.txt", "r");
     /* check if file can be opened */
     if (fp == NULL)
     {
@@ -963,6 +1014,11 @@ int second_pass()
         /* make sure the line is trimmed before start processing it */
         split = trim_string_whitespace(line);
 
+        /* Ignore empty lines */
+        if (split[0] == '\0')
+        {
+            continue;
+        }
         /* read each line and parse it */
 
         /* ignore lines that starts with ';' */
@@ -989,7 +1045,7 @@ int second_pass()
         if (split[0] == '.')
         {
             /* verify type of guiding line (can be extern, entry, data, string or struct) */
-            if (handle_guide_line(split, 1) == -1)
+            if (handle_guide_line(split, tmp_data_file) == -1)
             {
                 printf("ERROR - invalid guide line %s\n", split);
             }
@@ -1012,7 +1068,7 @@ int second_pass()
                 switch (operations[i].operand_num)
                 {
                 case 0:
-                    num_of_elements = do_operation(operations[i].opcode, cell_array, NULL, NULL);
+                    num_of_elements = do_operation(operations[i].opcode, cell_array, externs_file, NULL, NULL);
                     break;
                 case 1:
                     /* verify there are two words in command */
@@ -1023,7 +1079,7 @@ int second_pass()
                         return -1;
                     }
 
-                    num_of_elements = do_operation(operations[i].opcode, cell_array, first_operand, NULL);
+                    num_of_elements = do_operation(operations[i].opcode, cell_array, externs_file, NULL, first_operand);
                     break;
                 case 2:
                     rc = validate_three_words_in_cmd(split, first_operand, second_operand);
@@ -1032,7 +1088,7 @@ int second_pass()
                         printf("- operator %s is not valid.\n", operations[i].name);
                         return 1;
                     }
-                    num_of_elements = do_operation(operations[i].opcode, cell_array, first_operand, second_operand);
+                    num_of_elements = do_operation(operations[i].opcode, cell_array, externs_file, first_operand, second_operand);
                     break;
                 default:
                     printf("Invalid operand num %d", operations[i].operand_num);
@@ -1041,7 +1097,7 @@ int second_pass()
             }
         }
 
-        print_elements_in_cell(cell_array, num_of_elements);
+        print_elements_in_cell(cell_array, num_of_elements, obj_file);
 
         /* operations that are not listed in the opcodes table - fail with error */
         if (!is_found)
@@ -1051,13 +1107,22 @@ int second_pass()
     }
 
     fclose(fp);
+    fclose(tmp_data_file);
+    fclose(externs_file);
+
+    /* Now that the code is written, add the data (with addresses) from the temp file */
+    tmp_data_file = fopen("project_c_data.tmp", "r");
+    while (fgets(line, sizeof(line), tmp_data_file))
+    {
+        print_element_with_address(atoi(line), obj_file);
+    }
 
     return 0;
 }
 
 /* operations to call */
 /* type_source and type_operation are set to invalid_operand if there is no soure/dest operand (e.g. rts, hlt) */
-int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *operand_dest)
+int do_operation(opcodes opcode, cell *cell_array, FILE *externs_file, char *operand_source, char *operand_dest)
 {
     operand_type type_source = invalid_operand, type_dest = invalid_operand;
     int value_num_source[2];
@@ -1065,7 +1130,8 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
     int src = 0, dst = 0, element;
     int rc;
     int num_words;
-    int src_is_extern = 0, dst_is_extern = 0;
+
+    const char *src_extern = NULL, *dst_extern = NULL;
 
     cell c_source_word = {0};
     cell c_dest_word = {0};
@@ -1080,7 +1146,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
             return -1;
         }
 
-        rc = handle_operand_addressing_method(type_source, operand_source, &src, value_num_source, &src_is_extern);
+        rc = handle_operand_addressing_method(type_source, operand_source, &src, value_num_source, &src_extern, externs_file);
         if (rc != 0)
         {
             printf("Failed handling the source addressing method\n");
@@ -1098,7 +1164,7 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
             return -1;
         }
 
-        rc = handle_operand_addressing_method(type_dest, operand_dest, &dst, value_num_dest, &dst_is_extern);
+        rc = handle_operand_addressing_method(type_dest, operand_dest, &dst, value_num_dest, &dst_extern, externs_file);
         if (rc != 0)
         {
             printf("Failed handling the dest addressing method\n");
@@ -1126,7 +1192,8 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
 
     if (operand_source != NULL)
     { /* handle source operand - the handle_operand_words funciton contains another switch case per each case*/
-        num_words = handle_operand_words(type_source, cell_array, element, value_num_source, LEFT_SHIFT_BY_SIX, src_is_extern);
+        num_words = handle_operand_words(type_source, cell_array, element, value_num_source, LEFT_SHIFT_BY_SIX,
+                                         src_extern, externs_file);
 
         if (num_words == -1)
         {
@@ -1140,7 +1207,8 @@ int do_operation(opcodes opcode, cell *cell_array, char *operand_source, char *o
     /* handle dest operand  */
     if (operand_dest != NULL)
     {
-        num_words = handle_operand_words(type_dest, cell_array, element, value_num_dest, LEFT_SHIFT_BY_TWO, dst_is_extern);
+        num_words = handle_operand_words(type_dest, cell_array, element, value_num_dest, LEFT_SHIFT_BY_TWO,
+                                         dst_extern, externs_file);
 
         if (num_words == -1)
         {
@@ -1327,14 +1395,25 @@ int validate_three_words_in_cmd(char *split, char *first_operand, char *second_o
     return 0;
 }
 
-void print_elements_in_cell(cell *cell_array, int num_of_elements)
+void print_element_with_address(cell_value_type value, FILE *obj_file)
 {
+    write_as_base_32(current_address, obj_file);
+    fputs("\t", obj_file);
+    write_as_base_32(value, obj_file);
+    fputs("\n", obj_file);
+    current_address++;
+}
+
+void print_elements_in_cell(cell *cell_array, int num_of_elements, FILE *obj_file)
+{
+
     int i;
     char res_buff[100] = {0};
     printf("Printing %d elements in the array of cells.\n", num_of_elements);
     for (i = 0; i < num_of_elements; i++)
     {
         printf("Element #%d bits: %s.\n", i, itoa(cell_array[i].value, res_buff, 2));
+        print_element_with_address(cell_array[i].value, obj_file);
     }
 }
 
@@ -1478,18 +1557,43 @@ void macro_free_nodes_memory(MacroNode *head)
     }
 }
 
+#define INPUT_FILE_NAME "doron"
+
 int main()
 {
-    // pre_processor();
-    first_pass();
-    second_pass();
+    pre_processor();
 
-    // free_nodes_memory(head);
+    FILE *fp = NULL;
+    FILE *ent_file = NULL;
+    char output_file_name[1024];
+
+    sprintf(output_file_name, "%s.ob", INPUT_FILE_NAME);
+
+    fp = fopen(output_file_name, "w");
+
+    first_pass(fp);
+    second_pass(fp);
+
+    fclose(fp);
     Node *current = head;
+
+    ent_file = fopen("doron.ent", "w");
+
     while (current)
     {
+        if (current->is_entry == 1)
+        {
+            fprintf(ent_file, "%s\t", current->tag);
+            write_as_base_32(current->address, ent_file);
+            fputs("\n", ent_file);
+        }
+
         printf("Symbol %s: type %d, address %d, entry? %d\n", current->tag, current->type, current->address, current->is_entry);
         current = current->next;
     }
+
+    fclose(ent_file);
+
+    free_nodes_memory(head);
     return 0;
 }
