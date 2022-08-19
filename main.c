@@ -76,6 +76,7 @@ int main(int argc, char **argv)
 {
     char file_prefix[1024] = {0};
     char output_obj_file_name[1024];
+    char output_ext_file_name[1024];
     char *split = NULL;
     FILE *fp = NULL;
     int err;
@@ -95,7 +96,6 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++)
     {
         /* verify file exists in file system */
-
         FILE *input_file;
         if ((input_file = fopen(argv[i], "r")) == NULL)
         {
@@ -109,8 +109,7 @@ int main(int argc, char **argv)
         list_init(&macros);
 
         current_line[0] = '\0';
-        print_log_line(log_info);
-        printf("Start processing input file #%d: %s\n", i, argv[i]);
+        printf("--- Start processing input file #%d: %s\n", i, argv[i]);
         split = strtok(argv[i], ".");
         strcpy(file_prefix, split);
 
@@ -153,11 +152,23 @@ int main(int argc, char **argv)
             continue;
         }
 
-        print_log_line(log_info);
-        printf("Finished processing input file #%d: %s\n", i, argv[i]);
-		
-		/* Write entry file */
+        printf("--- Finished processing input file #%d: %s\n", i, argv[i]);
+
+        /* Write entry file */
         write_entry_file(file_prefix);
+
+        /* in case the extern file is empty in end of running, remove it from file system */
+        sprintf(output_ext_file_name, "%s%s", file_prefix, SUFFIX_EXTERN);
+        fp = fopen(output_ext_file_name, "r");
+        if (fp != NULL)
+        {
+            int file_size_in_file_system;
+            /* seek the file to the end and use ftell to get the file's size, if 0, it means it's empty */
+            fseek(fp, 0, SEEK_END);
+            file_size_in_file_system = ftell(fp);
+            if (file_size_in_file_system == 0)
+                remove(output_ext_file_name);
+        }
 
         /* avoid mem leak by clearing the linked list and its nodes */
         list_clear_memory(&symbols);
