@@ -13,13 +13,17 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#define NUM_BITS_IN_CELL 10
 #define NUM_BITS_IN_CELL_WITHOUT_ARE 8
+#define MAX_CHARS_IN_LINE 80
 #define MAX_ELEMENTS 30
 #define MAX_ELEMENTS_FOR_MACRO 100
+#define MAX_CHARS_FILE_NAME 1024
 #define OPERAND_SIZE 16
 #define MAX_ELEMENTS_IN_CELL 16
 #define RIGHT_SHIFT_BY_5 5
 #define AT_LEAST_ONE_ARG 1
+#define START_ADDRESS_AT_100 100
 #define SUFFIX_AM ".am"
 #define SUFFIX_TMP ".tmp"
 #define SUFFIX_EXTERN ".ext"
@@ -130,7 +134,7 @@ List symbols;
 List macros;
 
 /* Reference the current line to be printed in case of errors to let the user know which line has the error */
-char current_line[80];
+char current_line[MAX_CHARS_IN_LINE];
 
 /* "shortcut" for cell_value_type = unsigned short type */
 typedef unsigned int cell_value_type;
@@ -138,7 +142,7 @@ typedef unsigned int cell_value_type;
 /* the cell struct contains the value var with 10 bits to represent the "word" of the machine code.*/
 typedef struct cell
 {
-    cell_value_type value : 10;
+    cell_value_type value : NUM_BITS_IN_CELL;
 } cell;
 
 

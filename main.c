@@ -28,7 +28,7 @@
  */
 void write_entry_file(const char *file_prefix)
 {
-    char output_ent_file_name[1024];
+    char output_ent_file_name[MAX_CHARS_FILE_NAME];
     FILE *ent_file = NULL;
     Node *current_node = NULL;
     Symbol *symbol = NULL;
@@ -74,9 +74,9 @@ void write_entry_file(const char *file_prefix)
  */
 int main(int argc, char **argv)
 {
-    char file_prefix[1024] = {0};
-    char output_obj_file_name[1024];
-    char output_ext_file_name[1024];
+    char file_prefix[MAX_CHARS_FILE_NAME] = {0};
+    char output_obj_file_name[MAX_CHARS_FILE_NAME];
+    char output_ext_file_name[MAX_CHARS_FILE_NAME];
     char *split = NULL;
     FILE *fp = NULL;
     int err;
@@ -146,7 +146,7 @@ int main(int argc, char **argv)
         if (err != 0)
         {
             print_log_line(log_error);
-            printf("Second pass failed. Cleaning up and skipping file\n");
+            printf("\nError: Second pass failed. Cleaning up and skipping file\n");
             remove(output_obj_file_name);
             /* Continue to process next file(s) in args */
             continue;

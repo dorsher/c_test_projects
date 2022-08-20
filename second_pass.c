@@ -22,7 +22,7 @@
 #define LEFT_SHIFT_BY_SIX 6
 
 /* address ia a static var that is accessible in this function to increment by 1 the word count (both IC & DC)*/
-static cell_value_type current_address = 100;
+static cell_value_type current_address = START_ADDRESS_AT_100;
 
 /* bitwise operator functions */
 
@@ -366,7 +366,7 @@ int second_pass(FILE *obj_file, const char *file_prefix)
     int i;
     int len_line;
     char *split = NULL;
-    char line[80];
+    char line[MAX_CHARS_IN_LINE];
 
     FILE *tmp_data_file = NULL;
     FILE *externs_file = NULL;
@@ -377,9 +377,9 @@ int second_pass(FILE *obj_file, const char *file_prefix)
 
     const operation_info *operations = get_operations();
 
-    char input_am_file_name[1024];
-    char input_tmp_data_file_name[1024];
-    char input_extern_file_name[1024];
+    char input_am_file_name[MAX_CHARS_FILE_NAME];
+    char input_tmp_data_file_name[MAX_CHARS_FILE_NAME];
+    char input_extern_file_name[MAX_CHARS_FILE_NAME];
 
     int num_of_elements;
     char first_operand[OPERAND_SIZE];

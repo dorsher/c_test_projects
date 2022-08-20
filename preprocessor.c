@@ -23,11 +23,11 @@ void pre_processor(FILE *input_file, const char *file_prefix)
 {
     FILE *fp_write_to;
     /* requirement in project: line's len is up to 80 chars */
-    char line[80];
+    char line[MAX_CHARS_IN_LINE];
     char *split = NULL;
     int is_found_macro = 0;
 
-    char output_file_name[1024];
+    char output_file_name[MAX_CHARS_FILE_NAME];
 
     Macro current;
     Macro *other;

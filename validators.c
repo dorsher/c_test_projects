@@ -10,6 +10,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#define MAX_REGISTER 7
+#define MIN_REGISTER 0
 
 /**
  * Validate whether the operand is immediate or not
@@ -57,7 +59,7 @@ int validate_register_operand(const char *operand)
         /* Register symbol does not exist */
         return -1;
     }
-    if ((register_num > 7) || (register_num < 0))
+    if ((register_num > MAX_REGISTER) || (register_num < MIN_REGISTER))
     {
         /* Register number is not valid */
         return -1;

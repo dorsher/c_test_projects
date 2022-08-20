@@ -193,10 +193,10 @@ int validate_symbol_tag_name(const char *symbol_name_string)
  */
 int first_pass(FILE *obj_file, const char *file_prefix)
 {
-    int ic = 100, dc = 0, line_length;
+    int ic = START_ADDRESS_AT_100, dc = 0, line_length;
     FILE *fp;
     char *split = NULL;
-    char line[80];
+    char line[MAX_CHARS_IN_LINE];
     size_t len_line;
     int had_label;
     int err = 0;
@@ -205,7 +205,7 @@ int first_pass(FILE *obj_file, const char *file_prefix)
     Symbol *current = NULL;
     Node *current_node = NULL;
 
-    char input_am_file_name[1024];
+    char input_am_file_name[MAX_CHARS_FILE_NAME];
 
     sprintf(input_am_file_name, "%s%s", file_prefix, SUFFIX_AM);
     fp = fopen(input_am_file_name, "r");
@@ -308,7 +308,7 @@ int first_pass(FILE *obj_file, const char *file_prefix)
 
     /* write ic and dc in head of file*/
 
-    write_as_base_32(ic - 100, obj_file);
+    write_as_base_32(ic - START_ADDRESS_AT_100, obj_file);
     fputs(" ", obj_file);
     write_as_base_32(dc, obj_file);
     fputs("\n", obj_file);

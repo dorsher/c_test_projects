@@ -6,6 +6,7 @@
  * @date 2022-08-17
  */
 #include "base32.h"
+#define TOTAL_LETTERS_FROM_0_IN_BASE_32 31
 
 const char base32_array[] = "!@#$%^&*<>abcdefghijklmnopqrstuv";
 
@@ -17,7 +18,7 @@ const char base32_array[] = "!@#$%^&*<>abcdefghijklmnopqrstuv";
  */
 void write_as_base_32(cell_value_type value, FILE *fp)
 {
-    int mask_right = 31;
+    int mask_right = TOTAL_LETTERS_FROM_0_IN_BASE_32;
     int left_index_to_print, right_index_to_print;
 
     /* left 5 bits of cell */
