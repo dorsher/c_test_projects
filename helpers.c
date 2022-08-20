@@ -112,9 +112,8 @@ void print_log_line(log_level level)
 {
     /* Remove the '\n' at the end of the line */
     size_t line_len = strlen(current_line);
-    if (line_len > 0)
-        current_line[line_len - 1] = '\0';
-
+	if(line_len > 0 && (current_line[line_len -1]) == '\n')
+		current_line[line_len -1] = '\0';
     switch (level)
     {
     case log_info:

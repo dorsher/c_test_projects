@@ -98,7 +98,7 @@ int handle_struct_guide(char *name, FILE *output_file)
 
     if (is_string_numeric(split) != 0)
     {
-        printf("Failed reading the first element (%s) in the struct guide (should be decimal).", split);
+        printf("Failed reading the first element (%s) in the struct guide (should be decimal).\n", split);
         return -1;
     }
 
